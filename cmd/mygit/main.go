@@ -29,7 +29,7 @@ func main() {
 		fmt.Println("Successfully initialized git directory.")
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unsupported command: %s\n", err)
+		fmt.Fprintf(os.Stderr, "Unsupported command.")
 		os.Exit(1)
 	}
 
