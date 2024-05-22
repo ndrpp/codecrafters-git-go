@@ -39,7 +39,7 @@ func main() {
 		}
 
 		hash := os.Args[3]
-		content, err := os.ReadFile(fmt.Sprintf(".git/objects/%s/%s", hash[0:2], hash[2:len(hash)-1]))
+		content, err := os.ReadFile(fmt.Sprintf(".git/objects/%s/%s", hash[0:2], hash[2:]))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "File does not exist: %s\n", err)
 			os.Exit(1)
