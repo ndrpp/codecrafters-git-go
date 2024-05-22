@@ -36,7 +36,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "usage: mygit cat-file <flag> [<args>...]\n")
 			os.Exit(1)
 		}
-		catFile(os.Args[2], os.Args[3])
+		catFile(os.Args[3], os.Args[2])
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
