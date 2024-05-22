@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Usage: your_git.sh <command> <arg1> <arg2> ...
@@ -55,7 +56,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Failed to read compressed data: %s\n", err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stdout, string(p))
+		fmt.Fprintf(os.Stdout, strings.Split(string(p), "\x00")[1])
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
