@@ -59,7 +59,6 @@ func catFile(sha, flag string) {
 			fmt.Fprintf(os.Stderr, "Failed to create zlib reader: %s\n", err)
 			os.Exit(1)
 		}
-		defer z.Close()
 
 		p, err := io.ReadAll(z)
 		if err != nil {
@@ -67,6 +66,7 @@ func catFile(sha, flag string) {
 			os.Exit(1)
 		}
 		fmt.Print(strings.Split(string(p), "\x00")[1])
+		z.Close()
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
