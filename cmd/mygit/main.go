@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"compress/zlib"
 	"fmt"
 	"io"
@@ -33,30 +32,41 @@ func main() {
 		fmt.Println("Successfully initialized git directory.")
 
 	case "cat-file":
-		if len(os.Args) < 4 || os.Args[2] != "-p" {
-			fmt.Fprintf(os.Stderr, "usage: mygit cat-file -p [<args>...]\n")
+		if len(os.Args) < 4 {
+			fmt.Fprintf(os.Stderr, "usage: mygit cat-file <flag> [<args>...]\n")
 			os.Exit(1)
 		}
+		catFile(os.Args[3], os.Args[4])
 
-		hash := os.Args[3]
-		content, err := os.ReadFile(fmt.Sprintf(".git/objects/%s/%s", hash[0:2], hash[2:]))
+	default:
+		fmt.Fprintf(os.Stderr, "Unsupported command.")
+		os.Exit(1)
+	}
+}
+
+func catFile(sha, flag string) {
+	switch flag {
+	case "-p":
+		file, err := os.Open(fmt.Sprintf(".git/objects/%s/%s", sha[0:2], sha[2:]))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "File does not exist: %s\n", err)
 			os.Exit(1)
 		}
-		b := bytes.NewReader(content)
+
+		b := io.Reader(file)
 		z, err := zlib.NewReader(b)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to create zlib reader: %s\n", err)
 			os.Exit(1)
 		}
 		defer z.Close()
+
 		p, err := io.ReadAll(z)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to read compressed data: %s\n", err)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stdout, strings.Split(string(p), "\x00")[1])
+		fmt.Print(strings.Split(string(p), "\x00")[1])
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
