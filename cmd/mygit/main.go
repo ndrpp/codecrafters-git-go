@@ -48,6 +48,47 @@ func main() {
 		}
 		hashObject(os.Args[2], os.Args[3])
 
+	case "ls-tree":
+		if os.Args[3] != "" {
+			listTree(os.Args[2], os.Args[3])
+		} else {
+			listTree("unflagged", os.Args[2])
+		}
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unsupported command.")
+		os.Exit(1)
+	}
+}
+
+func listTree(flag, sha string) {
+	switch flag {
+	case "--name-only":
+		p, err := zlibDecompress(fmt.Sprintf(".git/objects/%s/%s", sha[0:2], sha[2:]))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to decompress file: %s\n", err)
+		}
+
+		var result [][]string
+		arr := strings.SplitN(string(p), "\x00", 2)
+		entries := strings.Split(arr[1], "\x00")
+		for i := range entries {
+			if i == 0 {
+				result = append(result, strings.Split(entries[i], " "))
+			} else if i == len(entries)-1 {
+				result[len(result)-1] = append(result[i-1], hex.EncodeToString([]byte(entries[i])))
+			} else {
+				fmt.Println("entries[i]: ", entries[i])
+				sha := entries[i][:20]
+				result[i-1] = append(result[i-1], hex.EncodeToString([]byte(sha)))
+				result = append(result, []string{entries[i][20:26], entries[i][26:]})
+			}
+		}
+
+		for i := 0; i < len(entries)-1; i++ {
+			fmt.Println(fmt.Sprintf("%s", strings.TrimSpace(result[i][1])))
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
 		os.Exit(1)
@@ -106,29 +147,39 @@ func hashObject(flag, filename string) {
 func catFile(sha, flag string) {
 	switch flag {
 	case "-p":
-		file, err := os.Open(fmt.Sprintf(".git/objects/%s/%s", sha[0:2], sha[2:]))
+		p, err := zlibDecompress(fmt.Sprintf(".git/objects/%s/%s", sha[0:2], sha[2:]))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "File does not exist: %s\n", err)
-			os.Exit(1)
-		}
-
-		b := io.Reader(file)
-		z, err := zlib.NewReader(b)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create zlib reader: %s\n", err)
-			os.Exit(1)
-		}
-
-		p, err := io.ReadAll(z)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read compressed data: %s\n", err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "Failed to decompress file: %s\n", err)
 		}
 		fmt.Print(strings.Split(string(p), "\x00")[1])
-		z.Close()
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
 		os.Exit(1)
 	}
+}
+
+func zlibDecompress(filename string) ([]byte, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "File does not exist: %s\n", err)
+		return nil, err
+	}
+
+	z, err := zlib.NewReader(io.Reader(file))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create zlib reader: %s\n", err)
+		z.Close()
+		return nil, err
+	}
+
+	p, err := io.ReadAll(z)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read compressed data: %s\n", err)
+		z.Close()
+		return nil, err
+	}
+
+	z.Close()
+	return p, nil
 }
