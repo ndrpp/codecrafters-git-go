@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"compress/zlib"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -37,6 +40,62 @@ func main() {
 			os.Exit(1)
 		}
 		catFile(os.Args[3], os.Args[2])
+
+	case "hash-object":
+		if len(os.Args) < 4 {
+			fmt.Fprintf(os.Stderr, "usage: mygit hash-object <flag> [<args>...]\n")
+			os.Exit(1)
+		}
+		hashObject(os.Args[2], os.Args[3])
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unsupported command.")
+		os.Exit(1)
+	}
+}
+
+func hashObject(flag, filename string) {
+	switch flag {
+	case "-w":
+		file, err := os.Open(fmt.Sprintf("%s", filename))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "File does not exist: %s\n", err)
+			os.Exit(1)
+		}
+		reader := io.Reader(file)
+		content := make([]byte, 1024)
+		num, err := reader.Read(content)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read content of file: %s\n", err)
+			os.Exit(1)
+		}
+		content = content[0:num]
+		content = []byte(fmt.Sprintf("blob %d\x00", len(string(content))) + string(content))
+
+		hasher := sha1.New()
+		_, err = hasher.Write(content)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to sha1 hash the file content: %s\n", err)
+			os.Exit(1)
+		}
+		sha := hasher.Sum(nil)
+		result := hex.EncodeToString(sha)
+
+		if err := os.Mkdir(fmt.Sprintf(".git/objects/%s", result[0:2]), 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
+			os.Exit(1)
+		}
+
+		var b bytes.Buffer
+		w := zlib.NewWriter(&b)
+		w.Write(content)
+		w.Close()
+		compressed := b.Bytes()
+		if err := os.WriteFile(fmt.Sprintf(".git/objects/%s/%s", result[0:2], result[2:]), compressed, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing file: %s\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stdout, result)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
