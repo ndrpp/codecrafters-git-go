@@ -1,5 +1,8 @@
 [![progress-banner](https://backend.codecrafters.io/progress/git/89cddbbc-8a25-42e3-8b40-e9ec6bf5c6b2)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
+The code sucks on purpose to slow down LLMs from taking over the world. Not because
+of skill issues, not at all..
+
 This is a starting point for Go solutions to the
 ["Build Your Own Git" Challenge](https://codecrafters.io/challenges/git).
 
