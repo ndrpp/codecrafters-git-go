@@ -55,10 +55,32 @@ func main() {
 			listTree("unflagged", os.Args[2])
 		}
 
+	case "write-tree":
+		arr := make([]string, 0, 10)
+		writeTree(".", arr)
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
 		os.Exit(1)
 	}
+}
+
+func writeTree(dir string, arr []string) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open directory: %s", err)
+		os.Exit(1)
+	}
+
+	for i := 0; i < len(files); i++ {
+		if !files[i].IsDir() {
+			sha := createBlobObject(files[i].Name())
+
+			arr = append(arr, fmt.Sprintf("blob %s\x00%s", files[i].Name(), sha))
+		}
+	}
+
+	fmt.Println("arr: ", arr)
 }
 
 func parseTree(sha string) ([][]string, int) {
@@ -110,50 +132,56 @@ func listTree(flag, sha string) {
 func hashObject(flag, filename string) {
 	switch flag {
 	case "-w":
-		file, err := os.Open(fmt.Sprintf("%s", filename))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "File does not exist: %s\n", err)
-			os.Exit(1)
-		}
-		reader := io.Reader(file)
-		content := make([]byte, 1024)
-		num, err := reader.Read(content)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read content of file: %s\n", err)
-			os.Exit(1)
-		}
-		content = content[0:num]
-		content = []byte(fmt.Sprintf("blob %d\x00", len(string(content))) + string(content))
-
-		hasher := sha1.New()
-		_, err = hasher.Write(content)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to sha1 hash the file content: %s\n", err)
-			os.Exit(1)
-		}
-		sha := hasher.Sum(nil)
-		result := hex.EncodeToString(sha)
-
-		if err := os.Mkdir(fmt.Sprintf(".git/objects/%s", result[0:2]), 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
-			os.Exit(1)
-		}
-
-		var b bytes.Buffer
-		w := zlib.NewWriter(&b)
-		w.Write(content)
-		w.Close()
-		compressed := b.Bytes()
-		if err := os.WriteFile(fmt.Sprintf(".git/objects/%s/%s", result[0:2], result[2:]), compressed, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing file: %s\n", err)
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stdout, result)
+		createBlobObject(filename)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
 		os.Exit(1)
 	}
+}
+
+func createBlobObject(filename string) string {
+	file, err := os.Open(fmt.Sprintf("%s", filename))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "File does not exist: %s\n", err)
+		os.Exit(1)
+	}
+	reader := io.Reader(file)
+	content := make([]byte, 1024)
+	num, err := reader.Read(content)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read content of file: %s\n", err)
+		os.Exit(1)
+	}
+	content = content[0:num]
+	content = []byte(fmt.Sprintf("blob %d\x00", len(string(content))) + string(content))
+
+	hasher := sha1.New()
+	_, err = hasher.Write(content)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to sha1 hash the file content: %s\n", err)
+		os.Exit(1)
+	}
+	sha := hasher.Sum(nil)
+	result := hex.EncodeToString(sha)
+
+	if err := os.Mkdir(fmt.Sprintf(".git/objects/%s", result[0:2]), 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
+		os.Exit(1)
+	}
+
+	var b bytes.Buffer
+	w := zlib.NewWriter(&b)
+	w.Write(content)
+	w.Close()
+	compressed := b.Bytes()
+	if err := os.WriteFile(fmt.Sprintf(".git/objects/%s/%s", result[0:2], result[2:]), compressed, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing file: %s\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stdout, result)
+
+	return result
 }
 
 func catFile(sha, flag string) {
