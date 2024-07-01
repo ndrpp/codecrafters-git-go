@@ -82,10 +82,46 @@ func main() {
 		}
 		fmt.Fprintf(os.Stdout, treeHash)
 
+	case "commit-tree":
+		hash := commitTree(os.Args[2], os.Args[4], os.Args[6])
+
+		fmt.Fprintf(os.Stdout, hash)
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
 		os.Exit(1)
 	}
+}
+
+func commitTree(treeSha, commitSha, message string) string {
+	str := fmt.Sprintf("tree %s\nparent %s\nauthor ndrpp <email@gmail.com> 1719851420 +0300\ncommiter ndrpp <email@gmail.com> 1719851420 +0300\n\n%s\n", treeSha, commitSha, message)
+	content := []byte(fmt.Sprintf("commit %d\x00", len(str)) + str)
+
+	hasher := sha1.New()
+	_, err := hasher.Write(content)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to sha1 hash the commit: %s\n", err)
+		os.Exit(1)
+	}
+	sha := hasher.Sum(nil)
+	result := hex.EncodeToString(sha)
+
+	if err := os.Mkdir(fmt.Sprintf(".git/objects/%s", result[0:2]), 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
+		os.Exit(1)
+	}
+
+	var b bytes.Buffer
+	w := zlib.NewWriter(&b)
+	w.Write(content)
+	w.Close()
+	compressed := b.Bytes()
+	if err := os.WriteFile(fmt.Sprintf(".git/objects/%s/%s", result[0:2], result[2:]), compressed, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing file: %s\n", err)
+		os.Exit(1)
+	}
+
+	return result
 }
 
 func writeTree(dir string) ([]byte, []byte) {
