@@ -9,10 +9,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// Usage: your_git.sh <command> <arg1> <arg2> ...
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: mygit <commad> [<args>...]\n")
@@ -57,11 +57,30 @@ func main() {
 		}
 
 	case "write-tree":
-		treeHash, err := writeTree(".")
+		cur, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to write tree: %s\n", err)
+			fmt.Fprintf(os.Stderr, "Failed to open working directory.")
+			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stdout, hex.EncodeToString(treeHash[:]))
+
+		sha, c := writeTree(cur)
+		treeHash := hex.EncodeToString(sha)
+
+		if err := os.Mkdir(fmt.Sprintf(".git/objects/%s", treeHash[0:2]), 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
+			os.Exit(1)
+		}
+
+		var b bytes.Buffer
+		w := zlib.NewWriter(&b)
+		w.Write(c)
+		w.Close()
+		compressed := b.Bytes()
+		if err := os.WriteFile(fmt.Sprintf(".git/objects/%s/%s", treeHash[0:2], treeHash[2:]), compressed, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing file: %s\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stdout, treeHash)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unsupported command.")
@@ -69,86 +88,63 @@ func main() {
 	}
 }
 
-type TreeEntry struct {
-	Mode string
-	Name string
-	Hash [20]byte
-}
+func writeTree(dir string) ([]byte, []byte) {
+	fileInfos, err := os.ReadDir(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read directory.")
+		os.Exit(1)
+	}
 
-func writeTree(dir string) ([20]byte, error) {
-	var entries []TreeEntry
+	type entry struct {
+		fileName string
+		b        []byte
+	}
+	var entries []entry
+	contentSize := 0
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if path == dir {
-			return nil
-		}
-
-		if info.Name() == ".git" {
-			return filepath.SkipDir
+	for _, fileInfo := range fileInfos {
+		if fileInfo.Name() == ".git" {
+			continue
 		}
 
-		if !info.IsDir() {
-			file, err := os.Open(path)
+		if !fileInfo.IsDir() {
+			f, err := os.Open(filepath.Join(dir, fileInfo.Name()))
 			if err != nil {
-				return err
+				fmt.Fprintf(os.Stderr, "Failed to open file: %s\n", err)
+				os.Exit(1)
 			}
-			reader := io.Reader(file)
-			content := make([]byte, 1024)
-			num, err := reader.Read(content)
-			content = content[:num]
-			hash := sha1.Sum(content)
-
-			mode := "100644"
-			if info.Mode()&0111 != 0 {
-				mode = "100755"
-			}
-
-			name := filepath.Base(path)
-			entries = append(entries, TreeEntry{Mode: mode, Name: name, Hash: hash})
-		} else {
-			mode := "40000"
-			name := filepath.Base(path)
-			hash, err := writeTree(name)
+			b, err := io.ReadAll(f)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to parse inner tree")
+				fmt.Fprintf(os.Stderr, "Failed to read file: %s\n", err)
 				os.Exit(1)
 			}
 
-			entries = append(entries, TreeEntry{Mode: mode, Name: name, Hash: hash})
-			return filepath.SkipDir
+			s := fmt.Sprintf("blob %d\u0000%s", len(b), string(b))
+			sha1 := sha1.New()
+			io.WriteString(sha1, s)
+			s = fmt.Sprintf("100644 %s\u0000", fileInfo.Name())
+			b = append([]byte(s), sha1.Sum(nil)...)
+			entries = append(entries, entry{fileInfo.Name(), b})
+			contentSize += len(b)
+		} else {
+			b, _ := writeTree(filepath.Join(dir, fileInfo.Name()))
+			s := fmt.Sprintf("40000 %s\u0000", fileInfo.Name())
+			b2 := append([]byte(s), b...)
+			entries = append(entries, entry{fileInfo.Name(), b2})
+			contentSize += len(b2)
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return [20]byte{}, err
 	}
 
-	var treeContent bytes.Buffer
+	sort.Slice(entries, func(i, j int) bool { return entries[i].fileName < entries[j].fileName })
+	s := fmt.Sprintf("tree %d\u0000", contentSize)
+	b := []byte(s)
+
 	for _, entry := range entries {
-		fmt.Fprintf(&treeContent, "%s %s\x00", entry.Mode, entry.Name)
-		treeContent.Write(entry.Hash[:])
+		b = append(b, entry.b...)
 	}
-
-	treeHash := sha1.Sum(treeContent.Bytes())
-
-	treeObject := fmt.Sprintf("tree %d\x00%s", treeContent.Len(), treeContent.Bytes())
-
-	var buff bytes.Buffer
-	z := zlib.NewWriter(&buff)
-	z.Write([]byte(treeObject))
-	z.Close()
-
-	hashStr := hex.EncodeToString(treeHash[:])
-	objectPath := fmt.Sprintf(".git/objects/%s/%s", hashStr[:2], hashStr[2:])
-	os.MkdirAll(filepath.Dir(objectPath), 0755)
-	os.WriteFile(objectPath, buff.Bytes(), 0644)
-
-	return treeHash, nil
+	sha1 := sha1.New()
+	io.WriteString(sha1, string(b))
+	return sha1.Sum(nil), b
 }
 
 func parseTree(sha string) ([][]string, int) {
@@ -166,7 +162,7 @@ func parseTree(sha string) ([][]string, int) {
 		} else if i == len(entries)-1 {
 			result[len(result)-1] = append(result[i-1], hex.EncodeToString([]byte(entries[i])))
 		} else {
-			if entries[i] != "" {
+			if len(entries[i]) >= 20 {
 				hash := entries[i][:20]
 				result[i-1] = append(result[i-1], hex.EncodeToString([]byte(hash)))
 				result = append(result, []string{entries[i][20:26], entries[i][26:]})
